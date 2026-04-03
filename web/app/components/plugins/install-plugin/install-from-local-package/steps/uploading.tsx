@@ -17,6 +17,7 @@ type Props = {
   onPackageUploaded: (result: {
     uniqueIdentifier: string
     manifest: PluginDeclaration
+    installToken: string
   }) => void
   onBundleUploaded: (result: Dependency[]) => void
   onFailed: (errorMsg: string) => void
@@ -49,6 +50,7 @@ const Uploading: FC<Props> = ({
         onPackageUploaded({
           uniqueIdentifier: res.unique_identifier,
           manifest: res.manifest,
+          installToken: res.install_token,
         })
       }
     }

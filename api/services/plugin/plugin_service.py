@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Mapping, Sequence
 from mimetypes import guess_type
+from uuid import uuid4
 
 from pydantic import BaseModel
 from sqlalchemy import delete, select, update
@@ -53,6 +54,40 @@ class PluginService:
 
     REDIS_KEY_PREFIX = "plugin_service:latest_plugin:"
     REDIS_TTL = 60 * 5  # 5 minutes
+
+    INSTALL_TOKEN_PREFIX = "plugin_service:install_token:"
+    INSTALL_TOKEN_TTL = 60 * 60  # 1 hour
+
+    class PluginUploadResponse(BaseModel):
+        """Upload response extended with a short-lived install token.
+
+        The install token caches the decode result in Redis so that
+        install_from_local_pkg can skip the decode/from_identifier daemon
+        call, avoiding the transaction-visibility race that causes 400s.
+        """
+
+        unique_identifier: str
+        manifest: "PluginDeclaration"
+        verification: "PluginVerification | None" = None
+        install_token: str
+
+    @staticmethod
+    def _cache_decode_response(tenant_id: str, response: "PluginDecodeResponse") -> str:
+        """Store the decode response in Redis and return a one-time install token."""
+        token = str(uuid4())
+        key = f"{PluginService.INSTALL_TOKEN_PREFIX}{tenant_id}:{token}"
+        redis_client.setex(key, PluginService.INSTALL_TOKEN_TTL, response.model_dump_json())
+        return token
+
+    @staticmethod
+    def _consume_decode_response(tenant_id: str, token: str) -> "PluginDecodeResponse | None":
+        """Retrieve and delete a cached decode response by install token."""
+        key = f"{PluginService.INSTALL_TOKEN_PREFIX}{tenant_id}:{token}"
+        data = redis_client.get(key)
+        if not data:
+            return None
+        redis_client.delete(key)
+        return PluginDecodeResponse.model_validate_json(data)
 
     @staticmethod
     def fetch_latest_plugin_version(plugin_ids: Sequence[str]) -> Mapping[str, LatestPluginCache | None]:
@@ -344,11 +379,13 @@ class PluginService:
         )
 
     @staticmethod
-    def upload_pkg(tenant_id: str, pkg: bytes, verify_signature: bool = False) -> PluginDecodeResponse:
+    def upload_pkg(tenant_id: str, pkg: bytes, verify_signature: bool = False) -> "PluginService.PluginUploadResponse":
         """
-        Upload plugin package files
+        Upload plugin package files.
 
-        returns: plugin_unique_identifier
+        Returns a PluginUploadResponse that includes a short-lived install_token.
+        Pass this token to install_from_local_pkg to skip the decode/from_identifier
+        daemon call and avoid the transaction-visibility race condition.
         """
         PluginService._check_marketplace_only_permission()
         manager = PluginInstaller()
@@ -359,8 +396,13 @@ class PluginService:
             verify_signature=features.plugin_installation_permission.restrict_to_marketplace_only,
         )
         PluginService._check_plugin_installation_scope(response.verification)
-
-        return response
+        install_token = PluginService._cache_decode_response(tenant_id, response)
+        return PluginService.PluginUploadResponse(
+            unique_identifier=response.unique_identifier,
+            manifest=response.manifest,
+            verification=response.verification,
+            install_token=install_token,
+        )
 
     @staticmethod
     def upload_pkg_from_github(
@@ -398,14 +440,37 @@ class PluginService:
         return manager.upload_bundle(tenant_id, bundle, verify_signature)
 
     @staticmethod
-    def install_from_local_pkg(tenant_id: str, plugin_unique_identifiers: Sequence[str]):
+    def install_from_local_pkg(
+        tenant_id: str,
+        plugin_unique_identifiers: Sequence[str],
+        install_tokens: Sequence[str] | None = None,
+    ):
+        """Install plugins from previously-uploaded local packages.
+
+        When install_tokens are provided (one per identifier, issued by upload_pkg),
+        the cached PluginDecodeResponse is consumed from Redis and the
+        decode/from_identifier daemon call is skipped entirely.  This eliminates
+        the transaction-visibility race that caused 400s immediately after upload.
+
+        Falls back to the daemon decode call if no token is supplied or the token
+        has already expired / been consumed.
+        """
         PluginService._check_marketplace_only_permission()
 
         manager = PluginInstaller()
 
-        for plugin_unique_identifier in plugin_unique_identifiers:
-            resp = manager.decode_plugin_from_identifier(tenant_id, plugin_unique_identifier)
-            PluginService._check_plugin_installation_scope(resp.verification)
+        for i, plugin_unique_identifier in enumerate(plugin_unique_identifiers):
+            cached = None
+            if install_tokens and i < len(install_tokens):
+                cached = PluginService._consume_decode_response(tenant_id, install_tokens[i])
+
+            if cached is not None:
+                verification = cached.verification
+            else:
+                resp = manager.decode_plugin_from_identifier(tenant_id, plugin_unique_identifier)
+                verification = resp.verification
+
+            PluginService._check_plugin_installation_scope(verification)
 
         return manager.install_from_identifiers(
             tenant_id,

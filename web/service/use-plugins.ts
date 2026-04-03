@@ -240,9 +240,12 @@ export const useInvalidateVersionListOfPlugin = () => {
 
 export const useInstallPackageFromLocal = () => {
   return useMutation({
-    mutationFn: (uniqueIdentifier: string) => {
+    mutationFn: ({ uniqueIdentifier, installToken }: { uniqueIdentifier: string; installToken?: string }) => {
       return post<InstallPackageResponse>('/workspaces/current/plugin/install/pkg', {
-        body: { plugin_unique_identifiers: [uniqueIdentifier] },
+        body: {
+          plugin_unique_identifiers: [uniqueIdentifier],
+          ...(installToken && { install_tokens: [installToken] }),
+        },
       })
     },
   })
