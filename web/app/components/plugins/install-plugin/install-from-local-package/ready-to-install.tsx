@@ -15,6 +15,7 @@ type Props = {
   setIsInstalling: (isInstalling: boolean) => void
   onClose: () => void
   uniqueIdentifier: string | null
+  installToken: string | null
   manifest: PluginDeclaration | null
   errorMsg: string | null
   onError: (errorMsg: string) => void
@@ -27,6 +28,7 @@ const ReadyToInstall: FC<Props> = ({
   setIsInstalling,
   onClose,
   uniqueIdentifier,
+  installToken,
   manifest,
   errorMsg,
   onError,
@@ -53,6 +55,7 @@ const ReadyToInstall: FC<Props> = ({
         step === InstallStep.readyToInstall && (
           <Install
             uniqueIdentifier={uniqueIdentifier!}
+            installToken={installToken ?? undefined}
             payload={manifest!}
             onCancel={onClose}
             onInstalled={handleInstalled}

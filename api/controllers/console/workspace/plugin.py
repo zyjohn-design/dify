@@ -50,6 +50,7 @@ class ParserGithubUpload(BaseModel):
 
 class ParserPluginIdentifiers(BaseModel):
     plugin_unique_identifiers: list[str]
+    install_tokens: list[str] | None = None
 
 
 class ParserGithubInstall(BaseModel):
@@ -359,7 +360,9 @@ class PluginInstallFromPkgApi(Resource):
         args = ParserPluginIdentifiers.model_validate(console_ns.payload)
 
         try:
-            response = PluginService.install_from_local_pkg(tenant_id, args.plugin_unique_identifiers)
+            response = PluginService.install_from_local_pkg(
+                tenant_id, args.plugin_unique_identifiers, args.install_tokens
+            )
         except PluginDaemonClientSideError as e:
             return {"code": "plugin_error", "message": e.description}, 400
 

@@ -30,6 +30,7 @@ const InstallFromLocalPackage: React.FC<InstallFromLocalPackageProps> = ({
   const [step, setStep] = useState<InstallStep>(InstallStep.uploading)
   const [uniqueIdentifier, setUniqueIdentifier] = useState<string | null>(null)
   const [manifest, setManifest] = useState<PluginDeclaration | null>(null)
+  const [installToken, setInstallToken] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const isBundle = file.name.endsWith('.difybndl')
   const [dependencies, setDependencies] = useState<Dependency[]>([])
@@ -59,14 +60,17 @@ const InstallFromLocalPackage: React.FC<InstallFromLocalPackageProps> = ({
   const handlePackageUploaded = useCallback(async (result: {
     uniqueIdentifier: string
     manifest: PluginDeclaration
+    installToken: string
   }) => {
     const {
       manifest,
       uniqueIdentifier,
+      installToken,
     } = result
     const icon = await getIconUrl(manifest!.icon)
     const iconDark = manifest.icon_dark ? await getIconUrl(manifest.icon_dark) : undefined
     setUniqueIdentifier(uniqueIdentifier)
+    setInstallToken(installToken)
     setManifest({
       ...manifest,
       icon,
@@ -126,6 +130,7 @@ const InstallFromLocalPackage: React.FC<InstallFromLocalPackageProps> = ({
               setIsInstalling={setIsInstalling}
               onClose={onClose}
               uniqueIdentifier={uniqueIdentifier}
+              installToken={installToken}
               manifest={manifest}
               errorMsg={errorMsg}
               onError={setErrorMsg}

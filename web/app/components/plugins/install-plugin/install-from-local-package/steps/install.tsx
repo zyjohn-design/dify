@@ -21,6 +21,7 @@ const i18nPrefix = 'installModal'
 
 type Props = {
   uniqueIdentifier: string
+  installToken?: string
   payload: PluginDeclaration
   onCancel: () => void
   onStartToInstall?: () => void
@@ -30,6 +31,7 @@ type Props = {
 
 const Installed: FC<Props> = ({
   uniqueIdentifier,
+  installToken,
   payload,
   onCancel,
   onStartToInstall,
@@ -79,7 +81,7 @@ const Installed: FC<Props> = ({
       const {
         all_installed,
         task_id,
-      } = await installPackageFromLocal(uniqueIdentifier)
+      } = await installPackageFromLocal({ uniqueIdentifier, installToken })
       const taskId = task_id
       const isInstalled = all_installed
 
